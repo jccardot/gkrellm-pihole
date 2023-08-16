@@ -3,3 +3,9 @@ gkrellm plugin for pihole monitoring
 
 This gkrellm plugin sits under your network chart and monitors you Pihole:
 total number of DNS queries and numbers of blocked queries in the last 24 hours.
+
+*To compile*:
+./build
+
+*To use*:
+copy gkrellm-pihole.so to your plusing directory (usually ~/.gkrellm2/plugins) and activate from the configuration.

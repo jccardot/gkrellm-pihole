@@ -412,7 +412,7 @@ static GkrellmMonitor plugin_mon = {
   NULL,   /* Undefined 1 */
   NULL,   /* private  */
 
-  MON_INSERT_AFTER|MON_CPU, /* Insert plugin before this monitor   */
+  MON_INSERT_AFTER|MON_NET, /* Insert plugin before this monitor   */
 
   NULL,   /* Handle if a plugin, filled in by GKrellM     */
   NULL    /* path if a plugin, filled in by GKrellM       */
