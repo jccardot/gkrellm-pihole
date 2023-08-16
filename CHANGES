@@ -1,0 +1,13 @@
+To build against gtk 2.0 for gkrellm2
+
+- just change some names in gkx86info.c
+- some changes to compile it in "build"
+
+Tested on Debian unstable i686.
+
+See http://web.wt.net/~billw/gkrellm/gkrellm-2.0-porting.html
+
+
+F.B
+anchois@free.fr
+

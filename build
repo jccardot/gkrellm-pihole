@@ -1,0 +1,4 @@
+#!/bin/bash
+gcc -O2 -Wall -fPIC `pkg-config gtk+-2.0 --cflags`  -c gkrellm-pihole.c
+gcc -shared -Wall -fPIC -l curl -o gkrellm-pihole.so gkrellm-pihole.o
+#cp gkrellm-pihole.so ~/.gkrellm2/plugins
