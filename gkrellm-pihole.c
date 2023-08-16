@@ -178,7 +178,6 @@ update_plugin() {
   }
   else
     update = 0; // first time
-  printf("update, %i\n", update);
 
   ts = gkrellm_meter_textstyle(style_id);
   //ts_alt = gkrellm_meter_alt_textstyle(style_id);
