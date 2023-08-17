@@ -160,6 +160,13 @@ panel_expose_event(GtkWidget *widget, GdkEventExpose *ev) {
   return FALSE;
 }
 
+static gint
+panel_button_press_event(GtkWidget *widget, GdkEventButton *ev, gpointer data) {
+  if (ev->button == 3)
+    gkrellm_open_config_window(monitor);
+  return TRUE;
+}
+
 static void
 update_plugin() {
   static gint w;
@@ -269,9 +276,12 @@ create_plugin(GtkWidget *vbox, gint first_create) {
   gkrellm_panel_configure(panel, NULL, style);
   gkrellm_panel_create(vbox, monitor, panel);
 
-  if (first_create)
+  if (first_create) {
     g_signal_connect(G_OBJECT (panel->drawing_area), "expose_event",
                      G_CALLBACK (panel_expose_event), NULL);
+    g_signal_connect(G_OBJECT (panel->drawing_area), "button_press_event",
+                     G_CALLBACK (panel_button_press_event), NULL );
+  }
 }
 
 /********************************************************/
@@ -288,7 +298,8 @@ save_plugin_config(FILE *f) {
     fprintf(f, "%s pihole_url_pattern %s\n", CONFIG_NAME, pihole_url_pattern);
 }
 
-static void updateURL() {
+static void
+updateURL() {
   if (pihole_hostname != NULL && pihole_API_key != NULL && pihole_url_pattern != NULL) {
     if (pihole_URL != NULL)
       g_free(pihole_URL);
