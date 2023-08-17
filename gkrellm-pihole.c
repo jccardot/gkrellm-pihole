@@ -25,6 +25,7 @@
 #define PIHOLE_OFFLINE 1
 
 static GkrellmMonitor *monitor;
+static GkrellmTicks *pGK;
 static GkrellmPanel *panel;
 static GkrellmDecal *decal_pihole_icon;
 static GkrellmDecal *decal_label1;
@@ -171,7 +172,7 @@ update_plugin() {
 
   // Do it only once every n seconds
   if (update >= 0) {
-    if (GK.second_tick)
+    if (pGK->second_tick)
       update++;
     if (update < pihole_freq) return;
     update = 0;
@@ -421,6 +422,7 @@ static GkrellmMonitor plugin_mon = {
 
 GkrellmMonitor*
 gkrellm_init_plugin() {
+  pGK = gkrellm_ticks();
   dns_queries_today = g_strdup("0");
   ads_blocked_today = g_strdup("0");
   pihole_url_pattern = g_strdup(PIHOLE_URL_PATTERN);
