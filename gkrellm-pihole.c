@@ -33,6 +33,7 @@ static GkrellmDecal *decal_text1;
 static GkrellmDecal *decal_label2;
 static GkrellmDecal *decal_text2;
 static GdkPixmap *pihole_gdkpixmap;
+static gboolean resources_acquired;
 static gchar *pihole_URL, *dns_queries_today, *ads_blocked_today; 
 static gint style_id;
 static gint update=-1;
@@ -46,11 +47,13 @@ static gint        pihole_freq = PIHOLE_DEFAULT_FREQ;
 static GtkWidget  *pihole_url_pattern_fillin;
 static gchar      *pihole_url_pattern;
 
+CURL *curl;
+
 struct MemoryStruct {
   char *memory;
   size_t size;
 };
- 
+
 static size_t
 WriteMemoryCallback(void *contents, size_t size, size_t nmemb, void *userp)
 {
@@ -75,25 +78,20 @@ WriteMemoryCallback(void *contents, size_t size, size_t nmemb, void *userp)
 int
 pihole(void)
 {
-  CURL *curl;
-  CURLcode res=0;
-
-// TODO: move to init  
   struct MemoryStruct chunk;
-
-  chunk.memory = malloc(1); /* will be grown as needed by the realloc above */
-  chunk.size = 0;           /* no data at this point */
+  CURLcode res=0;
 
   if (pihole_URL == NULL || pihole_URL[0] == 0) {
     gkrellm_draw_decal_pixmap(panel, decal_pihole_icon, PIHOLE_OFFLINE);
     puts("No URL defined");
     return -1;
   }
-
-  curl = curl_easy_init();
-// TODO: until there
+  
+  chunk.memory = malloc(1); /* will be grown as needed by the realloc above */
+  chunk.size = 0;           /* no data at this point */
 
   if(curl) {
+    //puts(pihole_URL);
     curl_easy_setopt(curl, CURLOPT_URL, pihole_URL);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
     /* send all data to this function  */
@@ -112,7 +110,8 @@ pihole(void)
     
     long response_code;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
-    if (response_code != 200) {
+    //printf("Response code: %lu\nBody: %s\n", response_code, chunk.memory);
+    if (response_code >= 400) {
       gkrellm_draw_decal_pixmap(panel, decal_pihole_icon, PIHOLE_OFFLINE);
       fprintf(stderr, "curl_easy_perform() response code: %lu\n", response_code);
       return -1;
@@ -145,11 +144,7 @@ pihole(void)
         ads_blocked_today = g_strdup(mystr);
       }
     }
-
-// TODO: move to cleanup
     free(chunk.memory);
-    curl_easy_cleanup(curl);
-// TODO: until there
   }
   return 0;
 }
@@ -210,12 +205,31 @@ update_plugin() {
 }
 
 static void
+enable_plugin(void) {
+  printf("plugin is being initialized.\n");
+  curl = curl_easy_init();
+  resources_acquired = TRUE;
+}
+
+static void
+disable_plugin(void) {
+  printf("plugin is being disabled.\n");
+  curl_easy_cleanup(curl);
+  resources_acquired = FALSE;
+}
+
+static void
 create_plugin(GtkWidget *vbox, gint first_create) {
   GkrellmStyle   *style;
   GkrellmTextstyle  *ts, *ts_alt;
   GdkBitmap  *mask;
   int y;
   gint w,h;
+
+  if (!resources_acquired) {
+    enable_plugin();
+    gkrellm_disable_plugin_connect(monitor, disable_plugin);
+  }
 
   if (first_create)
     panel = gkrellm_panel_new0();
