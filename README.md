@@ -14,9 +14,11 @@ Then you have to configure the Pihole hostname or IP, and the API key, in the pl
 You can check stdout for messages if the plugin cannot contact the Pihole.
 
 When the Pihole is online and the plugin properly configured, the Pihole icon show in colours:
+
 ![pihole online](docs/gkrellm-pihole-online.png)
 
 If gkrellm is not properly configured, or the Pihole is offline, the icon shows in black and white:
+
 ![pihole online](docs/gkrellm-pihole-offline.png)
 
 
