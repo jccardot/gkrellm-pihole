@@ -169,7 +169,7 @@ update_plugin() {
   static gint w;
   GkrellmTextstyle *ts /*, *ts_alt*/;
 
-  // Do it only once evary n seconds
+  // Do it only once every n seconds
   if (update >= 0) {
     if (GK.second_tick)
       update++;
@@ -318,6 +318,8 @@ apply_plugin_config() {
   pihole_url_pattern = g_strdup(gtk_entry_get_text(GTK_ENTRY(pihole_url_pattern_fillin)));
   updateURL();
   //puts(pihole_URL);
+  update = -1;
+  update_plugin();
 }
 
 static gchar* plugin_info_text[] = {
