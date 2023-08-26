@@ -9,6 +9,7 @@
 #include <gkrellm2/gkrellm.h>
 #include <stdio.h>
 #include <curl/curl.h>
+#include <pthread.h>
 
 #include "pihole.xpm"
 
@@ -98,6 +99,8 @@ pihole(void)
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
     /* we pass our 'chunk' struct to the callback function */
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&chunk);
+    /* pihole must answer quickly, else there is a problem anyway */
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 500);
 
     res = curl_easy_perform(curl);
     //printf("%lu bytes retrieved\n", (unsigned long)chunk.size);
@@ -162,25 +165,24 @@ panel_expose_event(GtkWidget *widget, GdkEventExpose *ev) {
 
 static gint
 panel_button_press_event(GtkWidget *widget, GdkEventButton *ev, gpointer data) {
-  if (ev->button == 3)
-    gkrellm_open_config_window(monitor);
+  gchar *cmd;
+  switch (ev->button) {
+    case 1:
+      cmd = g_strdup_printf("xdg-open http://%s", pihole_hostname);
+      system(cmd);
+      free(cmd);
+      break;
+    case 3:
+      gkrellm_open_config_window(monitor);
+      break;
+  }
   return TRUE;
 }
 
-static void
-update_plugin() {
-  static gint w;
+void
+*update_thread(void *vargp) {
+  gint w;
   GkrellmTextstyle *ts /*, *ts_alt*/;
-
-  // Do it only once every n seconds
-  if (update >= 0) {
-    if (pGK->second_tick)
-      update++;
-    if (update < pihole_freq) return;
-    update = 0;
-  }
-  else
-    update = 0; // first time
 
   ts = gkrellm_meter_textstyle(style_id);
   //ts_alt = gkrellm_meter_alt_textstyle(style_id);
@@ -209,6 +211,30 @@ update_plugin() {
 
   gkrellm_draw_panel_layers(panel);
 
+  return NULL;
+}
+
+static void
+update_plugin() {
+  // Do it only once every n seconds
+  if (update >= 0) {
+    if (pGK->second_tick)
+      update++;
+    if (update < pihole_freq) return;
+    update = 0;
+  }
+  else
+    update = 0; // first time
+
+  /* we will run the update in a thread in order not to block refreshes of the other krells */
+  static pthread_t thread_id = 0;
+  size_t i=0;
+
+  /* in case it has not finished yet, wait for the previous thread */
+  if (thread_id != 0)
+    pthread_join(thread_id, NULL);
+
+  pthread_create(&thread_id, NULL, update_thread, &i);
 }
 
 static void
@@ -372,7 +398,7 @@ create_plugin_tab(GtkWidget *tab_vbox) {
   vbox = gkrellm_gtk_framed_notebook_page(tabs, "Setup");
 
   /* configuration widgets */
-  table = gtk_table_new(2, 2, FALSE);
+  table = gtk_table_new(3, 2, FALSE);
     
   label_hostname = gtk_label_new("Pihole hostname:");
   gtk_misc_set_alignment (GTK_MISC (label_hostname), 1, 1);
@@ -404,7 +430,7 @@ create_plugin_tab(GtkWidget *tab_vbox) {
   vbox = gkrellm_gtk_framed_notebook_page(tabs, "Advanced");
 
   /* configuration widgets */
-  table = gtk_table_new(2, 2, FALSE);
+  table = gtk_table_new(1, 2, FALSE);
     
   label_url = gtk_label_new("URL pattern:");
   gtk_misc_set_alignment (GTK_MISC (label_url), 1, 1);
