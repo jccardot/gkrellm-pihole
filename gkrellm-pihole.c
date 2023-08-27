@@ -36,7 +36,7 @@ static GkrellmDecal *decal_label2;
 static GkrellmDecal *decal_text2;
 static GdkPixmap *pihole_gdkpixmap;
 static gboolean resources_acquired;
-static gchar *pihole_URL, *dns_queries_today, *ads_blocked_today; 
+static gchar *pihole_URL, *dns_queries_today, *ads_blocked_today, *status; 
 static gint style_id;
 static gint update=-1;
 static gboolean blocking_disabled;
@@ -142,26 +142,44 @@ pihole(void)
     return -1;
   }
 
-  gkrellm_draw_decal_pixmap(panel, decal_pihole_icon, PIHOLE_ONLINE);
-
-  // find the data in chunk.memory, named "dns_queries_today", "ads_blocked_today"
+  /* find the data in chunk.memory (parse the json),
+   * named "dns_queries_today", "ads_blocked_today" & "status" */
   char* mystr;
 
-  mystr = strstr(chunk.memory, "dns_queries_today");
+  mystr = strstr(chunk.memory, "\"dns_queries_today\"");
   if (mystr) {
-    mystr += strlen("dns_queries_today") + 2;
-    strtok(mystr, ",");
+    mystr += strlen("\"dns_queries_today\"") + 1;
+    strtok(mystr, ","); // change ',' to '\0'
     g_free(dns_queries_today);
     dns_queries_today = g_strdup(mystr);
-
-    mystr = strstr(mystr + strlen(mystr) + 1, "ads_blocked_today");
-    if (mystr) {
-      mystr += strlen("ads_blocked_today") + 2;
-      strtok(mystr, ",");
-      g_free(ads_blocked_today);
-      ads_blocked_today = g_strdup(mystr);
-    }
+    mystr += strlen(mystr);
+    mystr[0] = ','; // restore the ',' char
   }
+  
+  mystr = strstr(chunk.memory, "\"ads_blocked_today\"");
+  if (mystr) {
+    mystr += strlen("\"ads_blocked_today\"") + 1;
+    strtok(mystr, ",");
+    g_free(ads_blocked_today);
+    ads_blocked_today = g_strdup(mystr);
+    mystr += strlen(mystr);
+    mystr[0] = ',';
+  }
+  
+  mystr = strstr(chunk.memory, "\"status\"");
+  if (mystr) {
+    mystr += strlen("\"status\"") + 1;
+    strtok(mystr, ",");
+    g_free(status);
+    status = g_strdup(mystr);
+    mystr += strlen(mystr);
+    mystr[0] = ',';
+    if (strcmp(status, "\"enabled\""))
+      gkrellm_draw_decal_pixmap(panel, decal_pihole_icon, PIHOLE_OFFLINE);
+    else
+      gkrellm_draw_decal_pixmap(panel, decal_pihole_icon, PIHOLE_ONLINE);
+  }
+  
   free(chunk.memory);
   return 0;
 }
