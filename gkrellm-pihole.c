@@ -9,6 +9,7 @@
 #include <gkrellm2/gkrellm.h>
 #include <stdio.h>
 #include <curl/curl.h>
+#include <X11/Xlib.h>
 #include <pthread.h>
 
 #include "pihole.xpm"
@@ -16,7 +17,7 @@
 #define CONFIG_NAME "gkrellm-pihole"
 #define STYLE_NAME  "gkrellm-pihole"
 
-#define PIHOLE_URL_PATTERN       "http://%s/admin/api.php?summaryRaw&auth=%s"
+#define PIHOLE_URL_PATTERN       "http://%s/admin/api.php?%s&auth=%s"
 #define PIHOLE_DEFAULT_FREQ      10
 
 #define SPACING_BETWEEN_ROWS     4
@@ -38,6 +39,8 @@ static gboolean resources_acquired;
 static gchar *pihole_URL, *dns_queries_today, *ads_blocked_today; 
 static gint style_id;
 static gint update=-1;
+static gboolean blocking_disabled;
+static gint blocking_disabled_time;
 
 static GtkWidget  *pihole_hostname_fillin;
 static gchar      *pihole_hostname;
@@ -53,7 +56,7 @@ CURL *curl;
 struct MemoryStruct {
   char *memory;
   size_t size;
-};
+} chunk;
 
 static size_t
 WriteMemoryCallback(void *contents, size_t size, size_t nmemb, void *userp)
@@ -76,79 +79,90 @@ WriteMemoryCallback(void *contents, size_t size, size_t nmemb, void *userp)
   return realsize;
 }
 
+gboolean
+callURL(gchar *pihole_URL) {
+  CURLcode res=0;
+
+  //printf("calling %s\n", pihole_URL);
+  
+  if(!curl) {
+    fprintf(stderr, "curl is not initialized\n");
+    return FALSE;
+  }
+  
+  chunk.memory = malloc(1); /* will be grown as needed by the realloc above */
+  chunk.size = 0;           /* no data at this point */
+  
+  curl_easy_setopt(curl, CURLOPT_URL, pihole_URL);
+  curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+  /* send all data to this function  */
+  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
+  /* we pass our 'chunk' struct to the callback function */
+  curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&chunk);
+  /* pihole must answer quickly, else there is a problem anyway */
+  curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 500);
+
+  res = curl_easy_perform(curl);
+  //printf("%lu bytes retrieved\n", (unsigned long)chunk.size);
+  if(res != CURLE_OK || chunk.size == 0) {
+    fprintf(stderr, "curl_easy_perform() failed: %s\n",
+            curl_easy_strerror(res));
+    return FALSE;
+  }
+  
+  long response_code;
+  curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
+  //printf("Response code: %lu\nBody: %s\n", response_code, chunk.memory);
+  if (response_code >= 400) {
+    fprintf(stderr, "curl_easy_perform() response code: %lu\n", response_code);
+    return FALSE;
+  }
+  
+  /* if the api_key is incorrect, the api answers with "[]" */
+  if (!strcmp(chunk.memory, "[]")) {
+    puts("Incorrect API key");
+    return FALSE;
+  }
+  
+  /* the call when well */
+  return TRUE;
+}
+
 int
 pihole(void)
 {
-  struct MemoryStruct chunk;
-  CURLcode res=0;
-
   if (pihole_URL == NULL || pihole_URL[0] == 0) {
     gkrellm_draw_decal_pixmap(panel, decal_pihole_icon, PIHOLE_OFFLINE);
     puts("No URL defined");
     return -1;
   }
   
-  chunk.memory = malloc(1); /* will be grown as needed by the realloc above */
-  chunk.size = 0;           /* no data at this point */
-
-  if(curl) {
-    //puts(pihole_URL);
-    curl_easy_setopt(curl, CURLOPT_URL, pihole_URL);
-    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-    /* send all data to this function  */
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
-    /* we pass our 'chunk' struct to the callback function */
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&chunk);
-    /* pihole must answer quickly, else there is a problem anyway */
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 500);
-
-    res = curl_easy_perform(curl);
-    //printf("%lu bytes retrieved\n", (unsigned long)chunk.size);
-    if(res != CURLE_OK || chunk.size == 0) {
-      gkrellm_draw_decal_pixmap(panel, decal_pihole_icon, PIHOLE_OFFLINE);
-      fprintf(stderr, "curl_easy_perform() failed: %s\n",
-              curl_easy_strerror(res));
-      return -1;
-    }
-    
-    long response_code;
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
-    //printf("Response code: %lu\nBody: %s\n", response_code, chunk.memory);
-    if (response_code >= 400) {
-      gkrellm_draw_decal_pixmap(panel, decal_pihole_icon, PIHOLE_OFFLINE);
-      fprintf(stderr, "curl_easy_perform() response code: %lu\n", response_code);
-      return -1;
-    }
-    
-    /* if the api_key is incorrect, the api answers with "[]" */
-    if (!strcmp(chunk.memory, "[]")) {
-      gkrellm_draw_decal_pixmap(panel, decal_pihole_icon, PIHOLE_OFFLINE);
-      puts("Incorrect API key");
-      return -1;
-    }
-
-    gkrellm_draw_decal_pixmap(panel, decal_pihole_icon, PIHOLE_ONLINE);
-
-    // find the data in chunk.memory, named "dns_queries_today", "ads_blocked_today"
-    char* mystr;
-
-    mystr = strstr(chunk.memory, "dns_queries_today");
-    if (mystr) {
-      mystr += strlen("dns_queries_today") + 2;
-      strtok(mystr, ",");
-      g_free(dns_queries_today);
-      dns_queries_today = g_strdup(mystr);
-
-      mystr = strstr(mystr + strlen(mystr) + 1, "ads_blocked_today");
-      if (mystr) {
-        mystr += strlen("ads_blocked_today") + 2;
-        strtok(mystr, ",");
-        g_free(ads_blocked_today);
-        ads_blocked_today = g_strdup(mystr);
-      }
-    }
-    free(chunk.memory);
+  if (!callURL(pihole_URL)) {
+    gkrellm_draw_decal_pixmap(panel, decal_pihole_icon, PIHOLE_OFFLINE);
+    return -1;
   }
+
+  gkrellm_draw_decal_pixmap(panel, decal_pihole_icon, PIHOLE_ONLINE);
+
+  // find the data in chunk.memory, named "dns_queries_today", "ads_blocked_today"
+  char* mystr;
+
+  mystr = strstr(chunk.memory, "dns_queries_today");
+  if (mystr) {
+    mystr += strlen("dns_queries_today") + 2;
+    strtok(mystr, ",");
+    g_free(dns_queries_today);
+    dns_queries_today = g_strdup(mystr);
+
+    mystr = strstr(mystr + strlen(mystr) + 1, "ads_blocked_today");
+    if (mystr) {
+      mystr += strlen("ads_blocked_today") + 2;
+      strtok(mystr, ",");
+      g_free(ads_blocked_today);
+      ads_blocked_today = g_strdup(mystr);
+    }
+  }
+  free(chunk.memory);
   return 0;
 }
 
@@ -163,20 +177,127 @@ panel_expose_event(GtkWidget *widget, GdkEventExpose *ev) {
   return FALSE;
 }
 
+void open_dashboard (void) {
+  gchar *cmd;
+  cmd = g_strdup_printf("xdg-open http://%s", pihole_hostname);
+  system(cmd);
+  free(cmd);
+}
+
+// Callback function for menu items
+void
+on_menu_item_clicked(GtkMenuItem *item, gpointer user_data) {
+  if (!strcmp((char *)user_data, "open_dashboard")) {
+    open_dashboard();
+  }
+  else if (!strncmp((char *)user_data, "api:", strlen("api:"))) { // command to send as-is to the API
+    gchar *pihole_URL = g_strdup_printf(pihole_url_pattern, pihole_hostname, (char *)user_data + strlen("api:"), pihole_API_key);
+    callURL(pihole_URL);
+    g_free(pihole_URL);
+    if (!strncmp((char *)user_data, "api:disable", strlen("api:disable"))) {
+      blocking_disabled = TRUE;
+      if (strlen((char *)user_data) == strlen("api:disable"))
+        blocking_disabled_time = -1; // indefinitely
+      else
+        blocking_disabled_time = atoi((char *)user_data + strlen("api:disable") + 1);
+      //printf("blocking_disabled_time = %i\n", blocking_disabled_time);
+    }
+    else if (!strcmp((char *)user_data, "api:enable")) {
+      blocking_disabled = FALSE;
+      blocking_disabled_time = 0;
+    }
+  }
+  else if (!strcmp((char *)user_data, "config")) {
+    gkrellm_open_config_window(monitor);
+  }
+}
+
+gchar
+*secondsToHHMMSS(int totalSeconds) {
+    int hours, minutes, seconds;
+    hours = totalSeconds / 3600;
+    totalSeconds %= 3600;
+    minutes = totalSeconds / 60;
+    seconds = totalSeconds % 60;
+    return g_strdup_printf("%02d:%02d:%02d", hours, minutes, seconds);
+}
+
 static gint
 panel_button_press_event(GtkWidget *widget, GdkEventButton *ev, gpointer data) {
-  gchar *cmd;
+  GtkWidget *menu;
   switch (ev->button) {
     case 1:
-      cmd = g_strdup_printf("xdg-open http://%s", pihole_hostname);
-      system(cmd);
-      free(cmd);
+      menu = gtk_menu_new();
+
+      GtkWidget *title_item1 = gtk_menu_item_new_with_label("Disable blocking indefinitely");
+      g_signal_connect(G_OBJECT(title_item1), "activate", G_CALLBACK(on_menu_item_clicked), "api:disable");
+      gtk_menu_shell_append(GTK_MENU_SHELL(menu), title_item1);
+
+      GtkWidget *menu_item11 = gtk_menu_item_new_with_label("    or for 10 seconds");
+      g_signal_connect(G_OBJECT(menu_item11), "activate", G_CALLBACK(on_menu_item_clicked), "api:disable=10");
+      gtk_menu_shell_append(GTK_MENU_SHELL(menu), menu_item11);
+
+      GtkWidget *menu_item12 = gtk_menu_item_new_with_label("    or for 30 seconds");
+      g_signal_connect(G_OBJECT(menu_item12), "activate", G_CALLBACK(on_menu_item_clicked), "api:disable=30");
+      gtk_menu_shell_append(GTK_MENU_SHELL(menu), menu_item12);
+
+      GtkWidget *menu_item13 = gtk_menu_item_new_with_label("    or 5 minutes");
+      g_signal_connect(G_OBJECT(menu_item13), "activate", G_CALLBACK(on_menu_item_clicked), "api:disable=300");
+      gtk_menu_shell_append(GTK_MENU_SHELL(menu), menu_item13);
+
+      gchar *label;
+      if (blocking_disabled && blocking_disabled_time > 0) {
+        gchar *hhmmss;
+        hhmmss = secondsToHHMMSS(blocking_disabled_time);
+        label = g_strdup_printf("Enable blocking (%s)", hhmmss);
+        g_free(hhmmss);
+      }
+      else if (blocking_disabled && blocking_disabled_time < 0) {
+        label = g_strdup("Enable blocking (disabled)");
+      }
+      else {
+        label = g_strdup("Enable blocking");
+      }
+      GtkWidget *menu_item2 = gtk_menu_item_new_with_label(label);
+      g_signal_connect(G_OBJECT(menu_item2), "activate", G_CALLBACK(on_menu_item_clicked), "api:enable");
+      gtk_menu_shell_append(GTK_MENU_SHELL(menu), menu_item2);
+      free(label);
+      
+      GtkWidget *separator1 = gtk_separator_menu_item_new ();
+      gtk_menu_shell_append(GTK_MENU_SHELL(menu), separator1);
+
+      GtkWidget *menu_item3 = gtk_menu_item_new_with_label("Plugin configuration");
+      g_signal_connect(G_OBJECT(menu_item3), "activate", G_CALLBACK(on_menu_item_clicked), "config");
+      gtk_menu_shell_append(GTK_MENU_SHELL(menu), menu_item3);
+
+      GtkWidget *menu_item4 = gtk_menu_item_new_with_label("Open pi-hole dashboard");
+      g_signal_connect(G_OBJECT(menu_item4), "activate", G_CALLBACK(on_menu_item_clicked), "open_dashboard");
+      gtk_menu_shell_append(GTK_MENU_SHELL(menu), menu_item4);
+
+      gtk_widget_show_all(menu);
+
+      // Popup the menu at the event's position
+      gtk_menu_popup(GTK_MENU(menu), NULL, NULL, NULL, NULL, ev->button, ev->time);
+      break;
+    case 2:
+      open_dashboard();
       break;
     case 3:
       gkrellm_open_config_window(monitor);
       break;
   }
   return TRUE;
+}
+
+static void
+updateURL() {
+  //puts(pihole_url_pattern);
+  if (pihole_hostname != NULL && pihole_API_key != NULL && pihole_url_pattern != NULL) {
+    if (pihole_URL != NULL)
+      g_free(pihole_URL);
+    pihole_URL = g_strdup_printf(pihole_url_pattern, pihole_hostname, "summaryRaw", pihole_API_key);
+  }
+  //puts(pihole_URL);
 }
 
 void
@@ -218,8 +339,15 @@ static void
 update_plugin() {
   // Do it only once every n seconds
   if (update >= 0) {
-    if (pGK->second_tick)
+    if (pGK->second_tick) {
       update++;
+      if (blocking_disabled && blocking_disabled_time > 0) {
+        blocking_disabled_time--;
+        if (blocking_disabled_time == 0)
+          blocking_disabled = FALSE;
+        //printf("blocking_disabled_time = %i\n", blocking_disabled_time);
+      }
+    }
     if (update < pihole_freq) return;
     update = 0;
   }
@@ -227,26 +355,35 @@ update_plugin() {
     update = 0; // first time
 
   /* we will run the update in a thread in order not to block refreshes of the other krells */
-  static pthread_t thread_id = 0;
+  //static pthread_t thread_id = 0;
   size_t i=0;
 
   /* in case it has not finished yet, wait for the previous thread */
-  if (thread_id != 0)
+  /*if (thread_id != 0)
     pthread_join(thread_id, NULL);
 
-  pthread_create(&thread_id, NULL, update_thread, &i);
+  pthread_create(&thread_id, NULL, update_thread, &i);*/
+  update_thread(&i);
 }
 
 static void
 enable_plugin(void) {
-  printf("plugin is being initialized.\n");
+  //printf("plugin is being initialized.\n");
   curl = curl_easy_init();
+  updateURL();
+  /*
+  // Initialize the XCB threading system
+  if (!XInitThreads()) {
+      fprintf(stderr, "Error: XInitThreads failed.\n");
+      return;
+  }
+  */
   resources_acquired = TRUE;
 }
 
 static void
 disable_plugin(void) {
-  printf("plugin is being disabled.\n");
+  //printf("plugin is being disabled.\n");
   curl_easy_cleanup(curl);
   resources_acquired = FALSE;
 }
@@ -325,19 +462,11 @@ save_plugin_config(FILE *f) {
 }
 
 static void
-updateURL() {
-  if (pihole_hostname != NULL && pihole_API_key != NULL && pihole_url_pattern != NULL) {
-    if (pihole_URL != NULL)
-      g_free(pihole_URL);
-    pihole_URL = g_strdup_printf(pihole_url_pattern, pihole_hostname, pihole_API_key);
-  }
-}
-
-static void
 load_plugin_config(gchar *arg) {
   gchar config[64], item[256], value[256];
   gint n;
 
+  //printf("load_plugin_config(%s)\n", arg);
   n = sscanf(arg, "%s %[^\n]", config, item);
   if (n == 2) {
     if (strcmp(config, "pihole_hostname") == 0) {
@@ -355,8 +484,8 @@ load_plugin_config(gchar *arg) {
       sscanf(item, "%s\n", value);
       pihole_url_pattern = g_strdup(value);
     }
+    //updateURL();
   }
-  updateURL();
 }
 
 static void
@@ -369,15 +498,17 @@ apply_plugin_config() {
   if (pihole_url_pattern != NULL) g_free(pihole_url_pattern);
   pihole_url_pattern = g_strdup(gtk_entry_get_text(GTK_ENTRY(pihole_url_pattern_fillin)));
   updateURL();
-  //puts(pihole_URL);
   update = -1;
   update_plugin();
 }
 
 static gchar* plugin_info_text[] = {
-"<h>Pihole monitor\n",
+"<h>Pi-hole monitor\n",
 "\n\t(c) 2023 JC <gkrellm@cardot.net>\n",
 "\n\tMonitors your Pihole activity.\n",
+"\n\tThe menu (on click) allows to trigger actions on your Pi-hole,",
+"\n\tsuch as disabling it for a given time or indefinitely, enabling it,",
+"\n\tor opening the dashboard in your browser.\n",
 "\n\tReleased under the GNU General Public License\n",
 "\n\t", "<ul>Note", ": the default URL called on the Pihole is:\n",
 "\t" PIHOLE_URL_PATTERN
@@ -474,8 +605,8 @@ static GkrellmMonitor plugin_mon = {
 GkrellmMonitor*
 gkrellm_init_plugin() {
   pGK = gkrellm_ticks();
-  dns_queries_today = g_strdup("0");
-  ads_blocked_today = g_strdup("0");
+  dns_queries_today = g_strdup("--");
+  ads_blocked_today = g_strdup("--");
   pihole_url_pattern = g_strdup(PIHOLE_URL_PATTERN);
   style_id = gkrellm_add_meter_style(&plugin_mon, STYLE_NAME);
   monitor = &plugin_mon;
