@@ -128,6 +128,23 @@ callURL(gchar *pihole_URL) {
   return TRUE;
 }
 
+gchar
+*parseJson(gchar *key) { // key must be given with the enclosing double quotes
+  char *mystr;
+  gchar *value;
+
+  mystr = strstr(chunk.memory, key);
+  if (mystr) {
+    mystr += strlen(key) + 1;
+    strtok(mystr, ","); // change ',' to '\0'
+    value = g_strdup(mystr);
+    mystr += strlen(mystr);
+    mystr[0] = ','; // restore the ',' char
+    return value;
+  }
+  return g_strdup("");
+}
+
 int
 pihole(void)
 {
@@ -144,41 +161,18 @@ pihole(void)
 
   /* find the data in chunk.memory (parse the json),
    * named "dns_queries_today", "ads_blocked_today" & "status" */
-  char* mystr;
-
-  mystr = strstr(chunk.memory, "\"dns_queries_today\"");
-  if (mystr) {
-    mystr += strlen("\"dns_queries_today\"") + 1;
-    strtok(mystr, ","); // change ',' to '\0'
-    g_free(dns_queries_today);
-    dns_queries_today = g_strdup(mystr);
-    mystr += strlen(mystr);
-    mystr[0] = ','; // restore the ',' char
-  }
   
-  mystr = strstr(chunk.memory, "\"ads_blocked_today\"");
-  if (mystr) {
-    mystr += strlen("\"ads_blocked_today\"") + 1;
-    strtok(mystr, ",");
-    g_free(ads_blocked_today);
-    ads_blocked_today = g_strdup(mystr);
-    mystr += strlen(mystr);
-    mystr[0] = ',';
-  }
+  g_free(dns_queries_today);
+  dns_queries_today = parseJson("\"dns_queries_today\"");
+  g_free(ads_blocked_today);
+  ads_blocked_today = parseJson("\"ads_blocked_today\"");
+  g_free(status);
+  status = parseJson("\"status\"");
   
-  mystr = strstr(chunk.memory, "\"status\"");
-  if (mystr) {
-    mystr += strlen("\"status\"") + 1;
-    strtok(mystr, ",");
-    g_free(status);
-    status = g_strdup(mystr);
-    mystr += strlen(mystr);
-    mystr[0] = ',';
-    if (strcmp(status, "\"enabled\""))
-      gkrellm_draw_decal_pixmap(panel, decal_pihole_icon, PIHOLE_OFFLINE);
-    else
-      gkrellm_draw_decal_pixmap(panel, decal_pihole_icon, PIHOLE_ONLINE);
-  }
+  if (strcmp(status, "\"enabled\""))
+    gkrellm_draw_decal_pixmap(panel, decal_pihole_icon, PIHOLE_OFFLINE);
+  else
+    gkrellm_draw_decal_pixmap(panel, decal_pihole_icon, PIHOLE_ONLINE);
   
   free(chunk.memory);
   return 0;
@@ -487,18 +481,18 @@ load_plugin_config(gchar *arg) {
   //printf("load_plugin_config(%s)\n", arg);
   n = sscanf(arg, "%s %[^\n]", config, item);
   if (n == 2) {
-    if (strcmp(config, "pihole_hostname") == 0) {
+    if (!strcmp(config, "pihole_hostname")) {
       sscanf(item, "%s\n", value);
       pihole_hostname = g_strdup(value);
     }
-    else if (strcmp(config, "pihole_api_key") == 0) {
+    else if (!strcmp(config, "pihole_api_key")) {
       sscanf(item, "%s\n", value);
       pihole_API_key = g_strdup(value);
     }
-    else if (strcmp(config, "pihole_freq") == 0) {
+    else if (!strcmp(config, "pihole_freq")) {
       sscanf(item, "%u\n", &pihole_freq);
     }
-    else if (strcmp(config, "pihole_url_pattern") == 0) {
+    else if (!strcmp(config, "pihole_url_pattern")) {
       sscanf(item, "%s\n", value);
       pihole_url_pattern = g_strdup(value);
     }
