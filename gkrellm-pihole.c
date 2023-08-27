@@ -145,18 +145,18 @@ gchar
   return g_strdup("");
 }
 
-int
+gboolean
 pihole(void)
 {
   if (pihole_URL == NULL || pihole_URL[0] == 0) {
     gkrellm_draw_decal_pixmap(panel, decal_pihole_icon, PIHOLE_OFFLINE);
     puts("No URL defined");
-    return -1;
+    return FALSE;
   }
   
   if (!callURL(pihole_URL)) {
     gkrellm_draw_decal_pixmap(panel, decal_pihole_icon, PIHOLE_OFFLINE);
-    return -1;
+    return FALSE;
   }
 
   /* find the data in chunk.memory (parse the json),
@@ -175,7 +175,8 @@ pihole(void)
     gkrellm_draw_decal_pixmap(panel, decal_pihole_icon, PIHOLE_ONLINE);
   
   free(chunk.memory);
-  return 0;
+  
+  return TRUE;
 }
 
 /***********************************************************/
@@ -322,7 +323,8 @@ void
 
   w = gkrellm_chart_width();
  
-  pihole();
+  if (!pihole()) // call the pi-hole, update the labels only if the call was ok
+    return NULL;
 
   // right align values
   decal_text1->x_off =
