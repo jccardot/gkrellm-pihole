@@ -83,7 +83,7 @@ gboolean
 callURL(gchar *pihole_URL) {
   CURLcode res=0;
 
-  //printf("calling %s\n", pihole_URL);
+  printf("calling %s\n", pihole_URL);
   
   if(!curl) {
     fprintf(stderr, "curl is not initialized\n");
@@ -201,6 +201,42 @@ void open_dashboard (void) {
   free(cmd);
 }
 
+void
+*update_thread(void *vargp) {
+  gint w;
+  GkrellmTextstyle *ts /*, *ts_alt*/;
+
+  ts = gkrellm_meter_textstyle(style_id);
+  //ts_alt = gkrellm_meter_alt_textstyle(style_id);
+
+  w = gkrellm_chart_width();
+ 
+  if (!pihole()) // call the pi-hole, update the labels only if the call was ok
+    return NULL;
+
+  // right align values
+  decal_text1->x_off =
+    (w - gdk_string_width(gdk_font_from_description(ts->font), dns_queries_today)) - 4;
+    //(w - gdk_string_width(decal_text1->text_style.font, dns_queries_today));
+  if (decal_text1->x_off < 0)
+    decal_text1->x_off = 0;
+
+  decal_text2->x_off =
+    (w - gdk_string_width(gdk_font_from_description(ts->font), ads_blocked_today)) - 4;
+    //(w - gdk_string_width(decal_text1->text_style.font, ads_blocked_today));
+  if (decal_text2->x_off < 0)
+    decal_text2->x_off = 0;
+
+  gkrellm_draw_decal_text(panel, decal_label1, "Total", 0);
+  gkrellm_draw_decal_text(panel, decal_text1, dns_queries_today, 0);
+  gkrellm_draw_decal_text(panel, decal_label2, "Ads", 0);
+  gkrellm_draw_decal_text(panel, decal_text2, ads_blocked_today, 0);
+
+  gkrellm_draw_panel_layers(panel);
+
+  return NULL;
+}
+
 // Callback function for menu items
 void
 on_menu_item_clicked(GtkMenuItem *item, gpointer user_data) {
@@ -236,6 +272,10 @@ on_menu_item_clicked(GtkMenuItem *item, gpointer user_data) {
   else if (!strcmp((char *)user_data, "config")) {
     gkrellm_open_config_window(monitor);
   }
+  else if (!strcmp((char *)user_data, "update")) {
+    int i=0;
+    update_thread(&i);
+  }
 }
 
 gchar
@@ -251,6 +291,8 @@ gchar
 static gint
 panel_button_press_event(GtkWidget *widget, GdkEventButton *ev, gpointer data) {
   GtkWidget *menu;
+  int i=0;
+  
   switch (ev->button) {
     case 1:
       menu = gtk_menu_new();
@@ -300,13 +342,18 @@ panel_button_press_event(GtkWidget *widget, GdkEventButton *ev, gpointer data) {
       g_signal_connect(G_OBJECT(menu_item4), "activate", G_CALLBACK(on_menu_item_clicked), "open_dashboard");
       gtk_menu_shell_append(GTK_MENU_SHELL(menu), menu_item4);
 
+      GtkWidget *menu_item5 = gtk_menu_item_new_with_label("Update display");
+      g_signal_connect(G_OBJECT(menu_item5), "activate", G_CALLBACK(on_menu_item_clicked), "update");
+      gtk_menu_shell_append(GTK_MENU_SHELL(menu), menu_item5);
+
       gtk_widget_show_all(menu);
 
       // Popup the menu at the event's position
       gtk_menu_popup(GTK_MENU(menu), NULL, NULL, NULL, NULL, ev->button, ev->time);
       break;
     case 2:
-      open_dashboard();
+      //open_dashboard();
+      update_thread(&i);
       break;
     case 3:
       gkrellm_open_config_window(monitor);
@@ -324,42 +371,6 @@ updateURL() {
     pihole_URL = g_strdup_printf(pihole_url_pattern, pihole_hostname, "summaryRaw", pihole_API_key);
   }
   //puts(pihole_URL);
-}
-
-void
-*update_thread(void *vargp) {
-  gint w;
-  GkrellmTextstyle *ts /*, *ts_alt*/;
-
-  ts = gkrellm_meter_textstyle(style_id);
-  //ts_alt = gkrellm_meter_alt_textstyle(style_id);
-
-  w = gkrellm_chart_width();
- 
-  if (!pihole()) // call the pi-hole, update the labels only if the call was ok
-    return NULL;
-
-  // right align values
-  decal_text1->x_off =
-    (w - gdk_string_width(gdk_font_from_description(ts->font), dns_queries_today)) - 4;
-    //(w - gdk_string_width(decal_text1->text_style.font, dns_queries_today));
-  if (decal_text1->x_off < 0)
-    decal_text1->x_off = 0;
-
-  decal_text2->x_off =
-    (w - gdk_string_width(gdk_font_from_description(ts->font), ads_blocked_today)) - 4;
-    //(w - gdk_string_width(decal_text1->text_style.font, ads_blocked_today));
-  if (decal_text2->x_off < 0)
-    decal_text2->x_off = 0;
-
-  gkrellm_draw_decal_text(panel, decal_label1, "Total", 0);
-  gkrellm_draw_decal_text(panel, decal_text1, dns_queries_today, 0);
-  gkrellm_draw_decal_text(panel, decal_label2, "Ads", 0);
-  gkrellm_draw_decal_text(panel, decal_text2, ads_blocked_today, 0);
-
-  gkrellm_draw_panel_layers(panel);
-
-  return NULL;
 }
 
 static void
