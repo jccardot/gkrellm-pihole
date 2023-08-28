@@ -19,6 +19,11 @@ When the Pihole is online and the plugin properly configured, the Pihole icon sh
 
 If gkrellm is not properly configured, or the Pihole is offline, the icon shows in black and white:
 
-![pihole online](docs/gkrellm-pihole-offline.png)
+![pihole offline](docs/gkrellm-pihole-offline.png)
 
+Clicking on the plugin makes a menu appear, from which you can disable blocking, or enable it. When blocking is disabled, the pi-hole icon is greyed out.
+
+![pihole menu](docs/gkrellm-pihole-menu.png)
+
+The "Enable" menu entry shows the remaining time for which the pi-hole blocking is disabled (when applicable).
 
