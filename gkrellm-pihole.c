@@ -83,7 +83,7 @@ gboolean
 callURL(gchar *pihole_URL) {
   CURLcode res=0;
 
-  printf("calling %s\n", pihole_URL);
+  //printf("calling %s\n", pihole_URL);
   
   if(!curl) {
     fprintf(stderr, "curl is not initialized\n");
