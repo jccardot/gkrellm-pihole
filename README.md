@@ -27,3 +27,7 @@ Clicking on the plugin makes a menu appear, from which you can disable blocking,
 
 The "Enable" menu entry shows the remaining time for which the pi-hole blocking is disabled (when applicable).
 
+You can force the refresh of the plugin using the "Update display" menu, or simply by middle-clicking on the plugin.
+
+Right click on the plugin shows the plugin configuration panel, as is customary for gkrellm.
+
