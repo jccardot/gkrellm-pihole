@@ -171,8 +171,12 @@ pihole(void)
   
   if (strcmp(status, "\"enabled\""))
     gkrellm_draw_decal_pixmap(panel, decal_pihole_icon, PIHOLE_OFFLINE);
-  else
+  else {
     gkrellm_draw_decal_pixmap(panel, decal_pihole_icon, PIHOLE_ONLINE);
+    // force unblocking (if enabled done outside of gkrellm)
+    blocking_disabled = FALSE;
+    blocking_disabled_time = 0;
+  }
   
   free(chunk.memory);
   
@@ -204,9 +208,14 @@ on_menu_item_clicked(GtkMenuItem *item, gpointer user_data) {
     open_dashboard();
   }
   else if (!strncmp((char *)user_data, "api:", strlen("api:"))) { // command to send as-is to the API
+    gboolean callOK;
     gchar *pihole_URL = g_strdup_printf(pihole_url_pattern, pihole_hostname, (char *)user_data + strlen("api:"), pihole_API_key);
-    callURL(pihole_URL);
+    callOK = callURL(pihole_URL);
+    if (!callOK)
+      callOK = callURL(pihole_URL); // try again (timeout?)
     g_free(pihole_URL);
+    if (!callOK)
+      return;
     if (!strncmp((char *)user_data, "api:disable", strlen("api:disable"))) {
       blocking_disabled = TRUE;
       if (strlen((char *)user_data) == strlen("api:disable"))
@@ -214,10 +223,14 @@ on_menu_item_clicked(GtkMenuItem *item, gpointer user_data) {
       else
         blocking_disabled_time = atoi((char *)user_data + strlen("api:disable") + 1);
       //printf("blocking_disabled_time = %i\n", blocking_disabled_time);
+      gkrellm_draw_decal_pixmap(panel, decal_pihole_icon, PIHOLE_OFFLINE);
+      gkrellm_draw_panel_layers(panel);
     }
     else if (!strcmp((char *)user_data, "api:enable")) {
       blocking_disabled = FALSE;
       blocking_disabled_time = 0;
+      gkrellm_draw_decal_pixmap(panel, decal_pihole_icon, PIHOLE_ONLINE);
+      gkrellm_draw_panel_layers(panel);
     }
   }
   else if (!strcmp((char *)user_data, "config")) {
@@ -357,8 +370,11 @@ update_plugin() {
       update++;
       if (blocking_disabled && blocking_disabled_time > 0) {
         blocking_disabled_time--;
-        if (blocking_disabled_time == 0)
+        if (blocking_disabled_time == 0) {
           blocking_disabled = FALSE;
+          gkrellm_draw_decal_pixmap(panel, decal_pihole_icon, PIHOLE_ONLINE);
+          gkrellm_draw_panel_layers(panel);
+        }
         //printf("blocking_disabled_time = %i\n", blocking_disabled_time);
       }
     }
