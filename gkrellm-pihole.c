@@ -169,9 +169,13 @@ pihole(void)
   g_free(status);
   status = parseJson("\"status\"");
   
-  if (strcmp(status, "\"enabled\""))
+  if (strcmp(status, "\"enabled\"")) {
     gkrellm_draw_decal_pixmap(panel, decal_pihole_icon, PIHOLE_OFFLINE);
-  else {
+    if (!blocking_disabled) { // disabled from outside gkrellm, e.g. the dashboard
+      blocking_disabled = TRUE;
+      blocking_disabled_time = -1; // indefinitely as we don't know how much
+    }
+  } else {
     gkrellm_draw_decal_pixmap(panel, decal_pihole_icon, PIHOLE_ONLINE);
     // force unblocking (if enabled done outside of gkrellm)
     blocking_disabled = FALSE;
@@ -211,8 +215,10 @@ void
 
   w = gkrellm_chart_width();
  
-  if (!pihole()) // call the pi-hole, update the labels only if the call was ok
+  if (!pihole()) { // call the pi-hole, update the labels only if the call was ok
+    gkrellm_draw_panel_layers(panel);
     return NULL;
+  }
 
   // right align values
   decal_text1->x_off =
