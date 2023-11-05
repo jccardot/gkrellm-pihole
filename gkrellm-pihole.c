@@ -100,7 +100,7 @@ callURL(gchar *pihole_URL) {
   /* we pass our 'chunk' struct to the callback function */
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&chunk);
   /* pihole must answer quickly, else there is a problem anyway */
-  curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 500);
+  curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 2000);
 
   res = curl_easy_perform(curl);
   //printf("%lu bytes retrieved\n", (unsigned long)chunk.size);
@@ -169,13 +169,13 @@ pihole(void)
   g_free(status);
   status = parseJson("\"status\"");
   
-  if (strcmp(status, "\"enabled\"")) {
+  if (!strcmp(status, "\"disabled\"")) {
     gkrellm_draw_decal_pixmap(panel, decal_pihole_icon, PIHOLE_OFFLINE);
-    if (!blocking_disabled) { // disabled from outside gkrellm, e.g. the dashboard
+    /*if (!blocking_disabled) { // disabled from outside gkrellm, e.g. the dashboard
       blocking_disabled = TRUE;
       blocking_disabled_time = -1; // indefinitely as we don't know how much
-    }
-  } else {
+    }*/
+  } else if (blocking_disabled_time == 0) {
     gkrellm_draw_decal_pixmap(panel, decal_pihole_icon, PIHOLE_ONLINE);
     // force unblocking (if enabled done outside of gkrellm)
     blocking_disabled = FALSE;
@@ -198,7 +198,8 @@ panel_expose_event(GtkWidget *widget, GdkEventExpose *ev) {
   return FALSE;
 }
 
-void open_dashboard (void) {
+void
+open_dashboard (void) {
   gchar *cmd;
   cmd = g_strdup_printf("xdg-open http://%s", pihole_hostname);
   system(cmd);
